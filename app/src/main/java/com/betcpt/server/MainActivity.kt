@@ -12,13 +12,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val greet = getGreeting()
-        val sum = addNumbers(7, 3)
-
-        val message = "$greet\n7 + 3 = $sum"
-        val textView = TextView(this)
-        textView.text = message
-        setContentView(textView)
+        startSocketServer()
 
     }
 
@@ -27,8 +21,7 @@ class MainActivity : AppCompatActivity() {
      * which is packaged with this application.
      */
 
-    external fun getGreeting(): String
-    external fun addNumbers(a: Int, b: Int): Int
+    external fun startSocketServer()
 
     companion object {
         // Used to load the 'server' library on application startup.
