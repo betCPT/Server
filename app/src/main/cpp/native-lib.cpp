@@ -1,75 +1,113 @@
 #include <jni.h>
-#include <unistd.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <string.h>
+#include <string>
+#include <vector>
 #include <thread>
+#include <mutex>
+#include <netinet/in.h>
+#include <unistd.h>
 #include <android/log.h>
+#include <arpa/inet.h>
 
-#define TAG "SocketServer"
+#define TAG "NativeServer"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
-#define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, TAG, __VA_ARGS__)
+#define PORT 1024
 
-#define PORT 1024  // must be > 1024 for non-root
+JavaVM* g_vm;
+jobject g_activity = nullptr;
 
-void socketServer() {
-    LOGI("Starting socket server...");
+std::mutex clients_mutex;
+std::vector<int> clientSockets;
+std::vector<std::string> clientDescs;
 
-    int server_fd, client_fd;
-    struct sockaddr_in address{};
-    int addrlen = sizeof(address);
-
-    server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd < 0) {
-        LOGE("Socket creation failed");
-        return;
-    }
-
-    address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY; // Listen on all interfaces
-    address.sin_port = htons(PORT);
-
-    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-        LOGE("Bind failed (port %d)", PORT);
-        close(server_fd);
-        return;
-    }
-
-    if (listen(server_fd, 1) < 0) {
-        LOGE("Listen failed");
-        close(server_fd);
-        return;
-    }
-
-    LOGI("Listening on port %d...", PORT);
-
-    while (true) {
-        client_fd = accept(server_fd, (struct sockaddr *)&address, (socklen_t *)&addrlen);
-        if (client_fd < 0) {
-            LOGE("Accept failed");
-            continue;
-        }
-
-        LOGI("Client connected");
-
-        char buffer[1024] = {0};
-        int bytes = recv(client_fd, buffer, sizeof(buffer) - 1, 0);
-        if (bytes > 0) {
-            buffer[bytes] = '\0';
-            LOGI("Received: %s", buffer);
-            std::string reply = std::string("Echo: ") + buffer;
-            send(client_fd, reply.c_str(), reply.length(), 0);
-        }
-
-        close(client_fd);
-    }
-
-    close(server_fd);
+void notifyClientConnected(const std::string& desc) {
+    JNIEnv* env;
+    g_vm->AttachCurrentThread(&env, nullptr);
+    jclass cls = env->GetObjectClass(g_activity);
+    jmethodID mid = env->GetMethodID(cls, "onClientConnected", "(Ljava/lang/String;)V");
+    jstring jdesc = env->NewStringUTF(desc.c_str());
+    env->CallVoidMethod(g_activity, mid, jdesc);
+    env->DeleteLocalRef(jdesc);
 }
 
-extern "C"
-JNIEXPORT void JNICALL
-Java_com_betcpt_server_MainActivity_startSocketServer(JNIEnv *, jobject) {
-    std::thread(socketServer).detach();
-    LOGI("Server thread started");
+void notifyClientDisconnected(int index) {
+    JNIEnv* env;
+    g_vm->AttachCurrentThread(&env, nullptr);
+    jclass cls = env->GetObjectClass(g_activity);
+    jmethodID mid = env->GetMethodID(cls, "onClientDisconnected", "(I)V");
+    env->CallVoidMethod(g_activity, mid, index);
+}
+
+void handleClient(int clientSocket, std::string clientDesc, int index) {
+    char buffer[2048];
+    while (true) {
+        memset(buffer, 0, sizeof(buffer));
+        int len = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
+        if (len <= 0) break;
+        LOGI("[Client %s] -> %s", clientDesc.c_str(), buffer);
+    }
+
+    close(clientSocket);
+    std::lock_guard<std::mutex> lock(clients_mutex);
+    clientSockets[index] = -1;
+    notifyClientDisconnected(index);
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_betcpt_server_MainActivity_startServer(JNIEnv* env, jobject thiz) {
+    env->GetJavaVM(&g_vm);
+    g_activity = env->NewGlobalRef(thiz);
+
+    std::thread([] {
+        int serverSocket = socket(AF_INET, SOCK_STREAM, 0);
+        sockaddr_in serverAddr{};
+        serverAddr.sin_family = AF_INET;
+        serverAddr.sin_addr.s_addr = INADDR_ANY;
+        serverAddr.sin_port = htons(PORT);
+
+        bind(serverSocket, (sockaddr*)&serverAddr, sizeof(serverAddr));
+        listen(serverSocket, 5);
+        LOGI("Server started on port %d", PORT);
+
+        while (true) {
+            sockaddr_in clientAddr{};
+            socklen_t addrLen = sizeof(clientAddr);
+            int clientSock = accept(serverSocket, (sockaddr*)&clientAddr, &addrLen);
+            if (clientSock < 0) continue;
+
+            std::string ip = inet_ntoa(clientAddr.sin_addr);
+            int port = ntohs(clientAddr.sin_port);
+            std::string desc = ip + ":" + std::to_string(port);
+
+            {
+                std::lock_guard<std::mutex> lock(clients_mutex);
+                clientSockets.push_back(clientSock);
+                clientDescs.push_back(desc);
+            }
+
+            notifyClientConnected(desc);
+            std::thread(handleClient, clientSock, desc, clientSockets.size() - 1).detach();
+        }
+    }).detach();
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_betcpt_server_MainActivity_sendCommandTo(JNIEnv* env, jobject, jint index, jstring cmd) {
+    std::lock_guard<std::mutex> lock(clients_mutex);
+    if (index >= 0 && index < clientSockets.size() && clientSockets[index] != -1) {
+        const char* c_cmd = env->GetStringUTFChars(cmd, nullptr);
+        send(clientSockets[index], c_cmd, strlen(c_cmd), 0);
+        env->ReleaseStringUTFChars(cmd, c_cmd);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_betcpt_server_MainActivity_sendCommandToAll(JNIEnv* env, jobject, jstring cmd) {
+    std::lock_guard<std::mutex> lock(clients_mutex);
+    const char* c_cmd = env->GetStringUTFChars(cmd, nullptr);
+    for (int sock : clientSockets) {
+        if (sock != -1) {
+            send(sock, c_cmd, strlen(c_cmd), 0);
+        }
+    }
+    env->ReleaseStringUTFChars(cmd, c_cmd);
 }

@@ -1,11 +1,77 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
-    xmlns:tools="http://schemas.android.com/tools"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:background="#101010"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    tools:context=".MainActivity">
+    android:layout_height="match_parent">
 
+    <LinearLayout
+        android:id="@+id/main_layout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp">
 
+        <TextView
+            android:id="@+id/clientCountLabel"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="0 clients connected"
+            android:textColor="#AAAAAA"
+            android:textSize="16sp"
+            android:gravity="center"
+            android:padding="8dp" />
 
-</androidx.constraintlayout.widget.ConstraintLayout>
+        <ListView
+            android:id="@+id/clientListView"
+            android:layout_width="match_parent"
+            android:layout_height="300dp"
+            android:layout_marginBottom="8dp"
+            android:choiceMode="multipleChoice"
+            android:divider="#222222"
+            android:dividerHeight="1dp"
+            android:background="#151515" />
+
+        <EditText
+            android:id="@+id/commandInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Enter command here"
+            android:inputType="text"
+            android:textColor="#FFFFFF"
+            android:background="#222222"
+            android:padding="12dp"
+            android:textSize="16sp"
+            android:layout_marginBottom="12dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+            <Button
+                android:id="@+id/sendToSelectedBtn"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Send to Selected"
+                android:textColor="#FFFFFF"
+                android:background="#FF0033"
+            android:layout_margin="4dp"
+            android:padding="12dp"
+            android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/sendToAllBtn"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:layout_height="wrap_content"
+                android:text="Send to All"
+                android:textColor="#FFFFFF"
+                android:background="#4444FF"
+            android:layout_margin="4dp"
+            android:padding="12dp"
+            android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+</ScrollView>
